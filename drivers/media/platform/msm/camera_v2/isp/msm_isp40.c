@@ -176,6 +176,8 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 			qos_regs, qos_entries);
 		if (rc < 0) {
 			pr_err("%s: NO QOS BUS BDG info\n", __func__);
+			kfree(qos_settings);
+			kfree(qos_regs);
 		} else {
 			if (qos_parms->settings) {
 				rc = of_property_read_u32_array(of_node,
@@ -184,22 +186,27 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 				if (rc < 0) {
 					pr_err("%s: NO QOS settings\n",
 						__func__);
+					kfree(qos_settings);
+					kfree(qos_regs);
 				} else {
 					for (i = 0; i < qos_entries; i++)
 						msm_camera_io_w(qos_settings[i],
 							vfebase + qos_regs[i]);
+					kfree(qos_settings);
+					kfree(qos_regs);
 				}
+			} else {
+				kfree(qos_settings);
+				kfree(qos_regs);
 			}
 		}
-		kfree(qos_settings);
-		kfree(qos_regs);
 	}
 	rc = of_property_read_u32(of_node, ds_parms->entries,
 		&ds_entries);
 	if (rc < 0 || !ds_entries) {
 		pr_err("%s: NO D/S entries found\n", __func__);
 	} else {
-		ds_settings = kcalloc(ds_entries, sizeof(uint32_t),
+		ds_settings = kzalloc(sizeof(uint32_t) * ds_entries,
 				GFP_KERNEL);
 		if (!ds_settings) {
 			pr_err("%s:%d No memory\n", __func__, __LINE__);
@@ -216,6 +223,8 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 			ds_regs, ds_entries);
 		if (rc < 0) {
 			pr_err("%s: NO D/S register info\n", __func__);
+			kfree(ds_settings);
+			kfree(ds_regs);
 		} else {
 			if (ds_parms->settings) {
 				rc = of_property_read_u32_array(of_node,
@@ -224,17 +233,20 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 				if (rc < 0) {
 					pr_err("%s: NO D/S settings\n",
 						__func__);
-				} else {
+					kfree(ds_settings);
+					kfree(ds_regs);
+	} else {
 					for (i = 0; i < ds_entries; i++)
 						msm_camera_io_w(ds_settings[i],
 							vfebase + ds_regs[i]);
 						kfree(ds_regs);
 						kfree(ds_settings);
 				}
+			} else {
+				kfree(ds_regs);
+				kfree(ds_settings);
 			}
 		}
-		kfree(ds_settings);
-		kfree(ds_regs);
 	}
 	return 0;
 }
@@ -740,13 +752,13 @@ static void msm_vfe40_process_epoch_irq(struct vfe_device *vfe_dev,
 		return;
 
 	if (irq_status0 & BIT(2)) {
+		msm_isp_notify(vfe_dev, ISP_EVENT_SOF, VFE_PIX_0, ts);
 		ISP_DBG("%s: EPOCH0 IRQ\n", __func__);
 		msm_isp_process_reg_upd_epoch_irq(vfe_dev, VFE_PIX_0,
 					MSM_ISP_COMP_IRQ_EPOCH, ts);
 		msm_isp_process_stats_reg_upd_epoch_irq(vfe_dev,
 					MSM_ISP_COMP_IRQ_EPOCH);
 		msm_isp_update_error_frame_count(vfe_dev);
-		msm_isp_notify(vfe_dev, ISP_EVENT_SOF, VFE_PIX_0, ts);
 		if (vfe_dev->axi_data.src_info[VFE_PIX_0].raw_stream_count > 0
 			&& vfe_dev->axi_data.src_info[VFE_PIX_0].
 			stream_count == 0) {
@@ -818,12 +830,6 @@ static void msm_vfe40_axi_enable_wm(void __iomem *vfe_base,
 		val |= 0x1;
 	else
 		val &= ~0x1;
-
-	trace_printk("%s:%d  wm_idx %d enable %d\n",
-		__func__, __LINE__,
-		wm_idx,
-		enable);
-
 	msm_camera_io_w_mb(val,
 		vfe_base + VFE40_WM_BASE(wm_idx));
 }
@@ -1617,14 +1623,6 @@ static void msm_vfe40_axi_cfg_wm_reg(
 	} else {
 		burst_len = VFE40_BURST_LEN;
 	}
-
-	trace_printk("%s:%d state %d src %d stream id %d session_id %x frame_base %d\n",
-	__func__, __LINE__,
-	stream_info->state,
-	stream_info->stream_src,
-	stream_info->stream_id,
-	stream_info->session_id,
-	stream_info->frame_based);
 
 	if (!stream_info->frame_based) {
 		msm_camera_io_w(0x0, vfe_dev->vfe_base + wm_base);
