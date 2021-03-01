@@ -11,22 +11,53 @@
 #include <linux/bug.h>
 #include <linux/restart_block.h>
 
-#ifdef CONFIG_THREAD_INFO_IN_TASK
 /*
- * For CONFIG_THREAD_INFO_IN_TASK kernels we need <asm/current.h> for the
- * definition of current, but for !CONFIG_THREAD_INFO_IN_TASK kernels,
- * including <asm/current.h> can cause a circular dependency on some platforms.
+ * System call restart block.
  */
-#include <asm/current.h>
-#define current_thread_info() ((struct thread_info *)current)
+struct restart_block {
+	long (*fn)(struct restart_block *);
+	union {
+		/* For futex_wait and futex_wait_requeue_pi */
+		struct {
+			u32 __user *uaddr;
+			u32 val;
+			u32 flags;
+			u32 bitset;
+			u64 time;
+			u32 __user *uaddr2;
+		} futex;
+		/* For nanosleep */
+		struct {
+			clockid_t clockid;
+			struct timespec __user *rmtp;
+#ifdef CONFIG_COMPAT
+			struct compat_timespec __user *compat_rmtp;
 #endif
+			u64 expires;
+		} nanosleep;
+		/* For poll */
+		struct {
+			struct pollfd __user *ufds;
+			int nfds;
+			int has_timeout;
+			unsigned long tv_sec;
+			unsigned long tv_nsec;
+		} poll;
+	};
+};
+
+extern long do_no_restart_syscall(struct restart_block *parm);
 
 #include <linux/bitops.h>
 #include <asm/thread_info.h>
 
 #ifdef __KERNEL__
 
-#define THREADINFO_GFP		(GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO)
+#ifdef CONFIG_DEBUG_STACK_USAGE
+# define THREADINFO_GFP		(GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO)
+#else
+# define THREADINFO_GFP		(GFP_KERNEL | __GFP_NOTRACK)
+#endif
 
 /*
  * flag set/clear/test wrappers
